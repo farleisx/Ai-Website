@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SSAI AI Builder — Dashboard</title>
+<style>
+body { font-family: Inter, system-ui, Arial; margin:20px }
+textarea { width:100%; height:160px }
+.row { display:flex; gap:12px }
+.btn { padding:10px 14px }
+footer { margin-top:18px; color:#666 }
+pre { background:#f7f7f8; padding:12px; border-radius:8px; overflow:auto }
+</style>
+</head>
+<body>
+<h1>Dashboard</h1>
+<p id="credits">Credits: <span id="creditsVal">...</span></p>
+
+
+<label>Prompt</label>
+<textarea id="prompt">Create a simple landing page HTML for a one-page SaaS called "My AI Site" with a hero and call to action.</textarea>
+
+
+<div class="row" style="margin-top:8px">
+<button id="generate" class="btn">Generate site (cost: 1 credit)</button>
+<button id="logout" class="btn">Logout</button>
+</div>
+
+
+<h3>Result</h3>
+<div id="result"><pre id="resultPre">No output yet</pre></div>
+
+
+<footer>
+<small>Make sure env vars are set on Vercel: <code>SUPABASE_*, SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY, GEN_AI_ENDPOINT</code></small>
+</footer>
+
+
+<script>
+// Simple local-storage based auth handshake
+const st = JSON.parse(localStorage.getItem('ssaib_user') || 'null')
+if (!st) {
+alert('Not logged in - redirecting')
+location.href = '/'
+}
+const userId = st.id
+
+
+async function
