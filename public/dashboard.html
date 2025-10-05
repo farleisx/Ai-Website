@@ -1,50 +1,86 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>SSAI AI Builder — Dashboard</title>
-<style>
-body { font-family: Inter, system-ui, Arial; margin:20px }
-textarea { width:100%; height:160px }
-.row { display:flex; gap:12px }
-.btn { padding:10px 14px }
-footer { margin-top:18px; color:#666 }
-pre { background:#f7f7f8; padding:12px; border-radius:8px; overflow:auto }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SSAI AI Builder — Dashboard</title>
+  <style>
+    body { font-family: Inter, system-ui, Arial; margin:0; padding:0; display:flex; flex-direction:column; align-items:center; background:#f9f9f9; }
+    header { width:100%; padding:16px; background:#333; color:#fff; text-align:center; }
+    main { max-width:720px; width:100%; margin-top:24px; }
+    input, button, textarea { width:100%; padding:10px; margin-top:8px; }
+    #credits { font-weight:bold; margin-top:12px; }
+  </style>
 </head>
 <body>
-<h1>Dashboard</h1>
-<p id="credits">Credits: <span id="creditsVal">...</span></p>
+  <header>
+    <h1>SSAI AI Builder Dashboard</h1>
+    <p id="credits">Credits: --</p>
+    <button id="logout">Log Out</button>
+  </header>
+  <main>
+    <h3>Generate a Website</h3>
+    <textarea id="prompt" placeholder="Describe your website..." rows="4"></textarea>
+    <button id="generate">Generate</button>
+    <div id="result"></div>
+  </main>
 
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
-<label>Prompt</label>
-<textarea id="prompt">Create a simple landing page HTML for a one-page SaaS called "My AI Site" with a hero and call to action.</textarea>
+    // ✅ Read from Vercel env vars (frontend safe)
+    const SUPABASE_URL = import.meta.env.VITE_NEXT_PUBLIC_SUPABASE_URL || window.SUPABASE_URL
+    const SUPABASE_ANON = import.meta.env.VITE_NEXT_PUBLIC_SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON)
 
+    // Check user
+    const stored = JSON.parse(localStorage.getItem('ssaib_user') || '{}')
+    if (!stored.id) window.location.href = '/index.html'
 
-<div class="row" style="margin-top:8px">
-<button id="generate" class="btn">Generate site (cost: 1 credit)</button>
-<button id="logout" class="btn">Logout</button>
-</div>
+    const creditsEl = document.getElementById('credits')
+    const resultEl = document.getElementById('result')
 
+    // Logout
+    document.getElementById('logout').addEventListener('click', async () => {
+      await supabase.auth.signOut()
+      localStorage.removeItem('ssaib_user')
+      window.location.href = '/index.html'
+    })
 
-<h3>Result</h3>
-<div id="result"><pre id="resultPre">No output yet</pre></div>
+    // Load credits
+    async function loadCredits() {
+      const { data, error } = await supabase.from('credits').select('credits').eq('user_id', stored.id).single()
+      if (error) creditsEl.textContent = 'Credits: 0'
+      else creditsEl.textContent = 'Credits: ' + data.credits
+    }
 
+    loadCredits()
 
-<footer>
-<small>Make sure env vars are set on Vercel: <code>SUPABASE_*, SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY, GEN_AI_ENDPOINT</code></small>
-</footer>
+    // Generate website button
+    document.getElementById('generate').addEventListener('click', async () => {
+      const prompt = document.getElementById('prompt').value.trim()
+      if (!prompt) return alert('Enter a prompt!')
+      
+      // Check credits first
+      const { data, error } = await supabase.from('credits').select('credits').eq('user_id', stored.id).single()
+      if (error || data.credits < 1) return alert('Not enough credits!')
 
+      resultEl.textContent = 'Generating...'
 
-<script>
-// Simple local-storage based auth handshake
-const st = JSON.parse(localStorage.getItem('ssaib_user') || 'null')
-if (!st) {
-alert('Not logged in - redirecting')
-location.href = '/'
-}
-const userId = st.id
+      // Call your backend API route that uses GEMINI_API_KEY (server-side)
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ prompt, user_id: stored.id })
+      })
 
+      const json = await res.json()
+      if (json.error) resultEl.textContent = 'Error: ' + json.error
+      else resultEl.innerHTML = json.html || 'No result'
 
-async function
+      // Update credits locally
+      loadCredits()
+    })
+  </script>
+</body>
+</html>
