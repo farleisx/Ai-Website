@@ -1,0 +1,12 @@
+{
+"name": "ssai-ai-builder",
+"version": "1.0.0",
+"private": true,
+"scripts": {
+"dev": "vercel dev",
+"start": "node server.js"
+},
+"dependencies": {
+"@supabase/supabase-js": "^2.30.0"
+}
+}
