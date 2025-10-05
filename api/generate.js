@@ -1,66 +1,45 @@
-// POST /api/generate { userId: string, prompt: string }
+// pages/api/generate.ts
+import { NextApiRequest, NextApiResponse } from "next";
+import { createClient } from "@supabase/supabase-js";
 
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! // Server-side only
+);
 
-// 1) atomic decrement via rpc
-const { data: newCredits, error: rpcErr } = await supabaseAdmin.rpc('decrement_credit_if_available', { p_user_id: userId });
-if (rpcErr) return res.status(500).json({ error: 'rpc error', details: rpcErr.message });
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  const { prompt, user_id } = req.body;
+  if (!prompt || !user_id) return res.status(400).json({ error: 'Missing prompt or user_id' });
 
-if (!newCredits) {
-return res.status(402).json({ error: 'no credits' });
-}
+  // 1️⃣ Check credits
+  const { data, error } = await supabase.from('credits').select('credits').eq('user_id', user_id).single();
+  if (error || !data) return res.status(500).json({ error: 'Failed to fetch credits' });
+  if (data.credits < 1) return res.status(400).json({ error: 'Not enough credits' });
 
+  try {
+    // 2️⃣ Call Gemini API
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta2/models/text-bison-001:generate', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        prompt: { text: prompt },
+        temperature: 0.7,
+        maxOutputTokens: 1000
+      })
+    });
+    const result = await r.json();
 
-// 2) call Gemini (or another GenAI) - use GEN_AI_ENDPOINT env var
-const GEN_AI_ENDPOINT = process.env.GEN_AI_ENDPOINT || ''; // example: set to a correct Google GenAI endpoint
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+    // 3️⃣ Deduct 1 credit
+    await supabase.from('credits').update({ credits: data.credits - 1 }).eq('user_id', user_id);
 
-
-let generatedHtml = null;
-
-
-if (GEN_AI_ENDPOINT && GEMINI_API_KEY) {
-// Minimal generic POST to the endpoint. Replace body structure if your endpoint needs different shape.
-const response = await fetch(GEN_AI_ENDPOINT, {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json',
-'Authorization': `Bearer ${GEMINI_API_KEY}`
-},
-body: JSON.stringify({ prompt })
-});
-
-
-if (!response.ok) {
-const text = await response.text();
-console.error('GenAI error:', text);
-return res.status(502).json({ error: 'genai_error', details: text });
-}
-
-
-const json = await response.json();
-// The exact path to the generated HTML depends on your GenAI response shape. Try common fields first.
-generatedHtml = json.output || json.result || json.text || JSON.stringify(json);
-} else {
-// Fallback: return a simple demo HTML if no GEN_AI_ENDPOINT provided.
-generatedHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Demo site</title></head><body><h1>Generated site</h1><p>Prompt: ${escapeHtml(prompt)}</p></body></html>`;
-}
-
-
-// 3) Return generated HTML and remaining credits
-return res.status(200).json({ html: generatedHtml, creditsLeft: newCredits });
-} catch (err) {
-console.error(err);
-return res.status(500).json({ error: err.message || String(err) });
-}
-};
-
-
-function escapeHtml(str) {
-return String(str)
-.replace(/&/g, '&amp;')
-.replace(/</g, '&lt;')
-.replace(/>/g, '&gt;')
-.replace(/"/g, '&quot;')
-.replace(/'/g, '&#039;');
+    // 4️⃣ Return generated HTML/text
+    res.status(200).json({ html: result?.candidates?.[0]?.content || '<p>No output</p>' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Generation failed' });
+  }
 }
